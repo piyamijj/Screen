@@ -2,15 +2,31 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>İnteraktif Ekran Koruyucu</title>
-    <!-- CSS dosyamızı bağlıyoruz -->
+    <!-- Kullanıcının sayfayı yanlışlıkla yakınlaştırmasını (zoom) engelliyoruz -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D Derinlikli Akvaryum</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <canvas id="ekranKoruyucu"></canvas>
     
-    <!-- JavaScript dosyamızı en alta bağlıyoruz -->
-    <script src="script.js"></script>
+    <!-- Sensör izni için Başlangıç Ekranı -->
+    <div id="start-screen">
+        <h1>Derinliklere Dal</h1>
+        <p>3D Derinlik ve Sensörleri aktif etmek için dokunun</p>
+        <button id="start-btn">Suya Gir</button>
+    </div>
+
+    <!-- Three.js kütüphanesini içeri aktarma (Modern ES Module yöntemi) -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+      }
+    </script>
+    
+    <!-- Ana kodumuz -->
+    <script type="module" src="script.js"></script>
+    
 </body>
 </html>
