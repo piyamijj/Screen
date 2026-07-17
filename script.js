@@ -1,259 +1,217 @@
-const canvas = document.getElementById('ekranKoruyucu');
-const ctx = canvas.getContext('2d');
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+import * as THREE from 'three';
 
-// Ekosistem Listeleri
-let fishes = [];
-let foods = [];
-let eggs = [];
-let bubbles = [];
-let time = 0; // Animasyon zamanlayıcısı (yosunlar ve kuyruklar için)
+// 1. SAHNE, SİS VE KAMERA OLUŞTURMA
+const scene = new THREE.Scene();
+// Arka planı derin okyanus mavisi yap ve gerçekçi derinlik (sis) ekle
+scene.background = new THREE.Color(0x001e3f);
+scene.fog = new THREE.FogExp2(0x001e3f, 0.015); 
 
-// Ayarlar ve Türler
-const ADULT_SIZE = 12; // Balığın yetişkin formuna geçeceği boyut
-const MAX_SIZE = 18;   // Yumurtlama boyutu
-const SPECIES = ['clownfish', 'angelfish', 'neon']; // 3 farklı tür
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 40); // Kamerayı biraz geriye çek
 
-// --- ETKİLEŞİM (YEM ATMA) ---
-canvas.addEventListener('mousedown', dropFood);
-canvas.addEventListener('touchstart', (e) => {
-    e.preventDefault(); 
-    for(let i=0; i<e.touches.length; i++) dropFood(e.touches[i]);
-}, {passive: false});
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+document.body.appendChild(renderer.domElement);
 
-function dropFood(e) {
-    foods.push({ x: e.clientX, y: e.clientY, size: 3, speedY: Math.random() * 0.5 + 0.5 });
+// 2. IŞIKLANDIRMA (Atmosfer)
+const ambientLight = new THREE.AmbientLight(0x004466, 2); // Genel su altı loşluğu
+scene.add(ambientLight);
+
+const directionalLight = new THREE.DirectionalLight(0xaaddff, 3); // Yukarıdan vuran güneş/ay ışığı
+directionalLight.position.set(0, 50, 10);
+scene.add(directionalLight);
+
+// 3. PLANKTONLAR / SU KABARCIKLARI
+const particleGeo = new THREE.BufferGeometry();
+const particleCount = 800;
+const posArray = new Float32Array(particleCount * 3);
+for(let i = 0; i < particleCount * 3; i++) {
+    posArray[i] = (Math.random() - 0.5) * 100; // Uzaya rastgele saç
+}
+particleGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+const particleMat = new THREE.PointsMaterial({ size: 0.15, color: 0xffffff, transparent: true, opacity: 0.4 });
+const particlesMesh = new THREE.Points(particleGeo, particleMat);
+scene.add(particlesMesh);
+
+// 4. 3D BALIK OLUŞTURMA (Geometrik Sürü)
+const fishes = [];
+// Dışarıdan model yüklemediğimiz için, koni ve üçgenleri birleştirip 3D balık yapıyoruz
+const bodyGeo = new THREE.ConeGeometry(0.5, 2, 8); 
+bodyGeo.rotateX(Math.PI / 2); // İleriye dönük yap
+const tailGeo = new THREE.ConeGeometry(0.3, 1, 3);
+tailGeo.rotateX(-Math.PI / 2);
+tailGeo.translate(0, 0, -1.2); // Kuyruğu arkaya al
+
+for(let i = 0; i < 35; i++) {
+    // Metalik, ışığı yansıtan gerçekçi pullar efekti
+    const material = new THREE.MeshStandardMaterial({ 
+        color: new THREE.Color().setHSL(Math.random() * 0.15 + 0.5, 0.8, 0.6), // Turkuaz/Mavi tonları
+        roughness: 0.2, 
+        metalness: 0.6 
+    });
+    
+    const fishGroup = new THREE.Group();
+    const body = new THREE.Mesh(bodyGeo, material);
+    const tail = new THREE.Mesh(tailGeo, material);
+    fishGroup.add(body);
+    fishGroup.add(tail);
+    
+    // Rastgele konumlarda doğsunlar
+    fishGroup.position.set((Math.random() - 0.5) * 60, (Math.random() - 0.5) * 40, (Math.random() - 0.5) * 30);
+    
+    // Fizik, yön ve DNA özellikleri
+    fishGroup.userData = {
+        velocity: new THREE.Vector3((Math.random()-0.5), (Math.random()-0.5), (Math.random()-0.5)),
+        speed: Math.random() * 0.1 + 0.06,
+        tailMesh: tail,
+        seed: Math.random() * 100 // Her balığın yüzüş ritmi farklı olsun
+    };
+    
+    scene.add(fishGroup);
+    fishes.push(fishGroup);
 }
 
-// --- ARKA PLAN ELEMENTLERİ (Yosun ve Kabarcıklar) ---
-function drawEnvironment() {
-    // 1. Deniz Tabanı (Kum)
-    ctx.fillStyle = '#2a1e12';
-    ctx.beginPath();
-    ctx.moveTo(0, canvas.height - 30);
-    ctx.quadraticCurveTo(canvas.width / 2, canvas.height - 60, canvas.width, canvas.height - 20);
-    ctx.lineTo(canvas.width, canvas.height);
-    ctx.lineTo(0, canvas.height);
-    ctx.fill();
+// 5. ETKİLEŞİM VE YEM ATMA (3D Raycasting)
+let food = null;
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
 
-    // 2. Hareketli Yosunlar (Trigonometri ile dalgalanma)
-    ctx.lineWidth = 12;
-    ctx.lineCap = 'round';
-    for (let i = 0; i < canvas.width; i += 150) {
-        ctx.strokeStyle = `hsl(140, 60%, ${20 + (i % 20)}%)`; // Farklı yeşil tonları
-        let startX = i + 50;
-        let startY = canvas.height;
-        let height = 150 + (i % 100);
-        
-        // Zaman bazlı salınım
-        let sway = Math.sin(time * 0.05 + i) * 30; 
-        
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.quadraticCurveTo(startX + sway, startY - height/2, startX + sway/2, startY - height);
-        ctx.stroke();
-    }
+window.addEventListener('pointerdown', (event) => {
+    // Tıklanan 2D ekran noktasını 3 boyutlu derinliğe (X,Y,Z) çevirme matematiği
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    
+    if(food) scene.remove(food); // Önceki yemi sil
+    
+    // Yeni Parlayan Yem
+    const foodGeo = new THREE.SphereGeometry(0.6, 16, 16);
+    const foodMat = new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xff5500, emissiveIntensity: 1 });
+    food = new THREE.Mesh(foodGeo, foodMat);
+    
+    // Yemi, kameradan tıklanan yöne doğru 25 birim ileriye at (Derinlik efekti)
+    raycaster.ray.at(25, food.position); 
+    scene.add(food);
+});
 
-    // 3. Su Kabarcıkları
-    if (Math.random() < 0.05) { // Rastgele kabarcık üret
-        bubbles.push({ x: Math.random() * canvas.width, y: canvas.height, size: Math.random() * 4 + 1, speed: Math.random() * 2 + 1 });
-    }
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    for (let i = bubbles.length - 1; i >= 0; i--) {
-        let b = bubbles[i];
-        b.y -= b.speed;
-        b.x += Math.sin(time * 0.1 + b.y * 0.05) * 1; // Zikzak çizerek yükselme
-        ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2); ctx.fill();
-        if (b.y < 0) bubbles.splice(i, 1);
-    }
+// 6. PENCERE İLLÜZYONU (TELEFON JİROSKOPU VE FARE)
+let targetCameraX = 0;
+let targetCameraY = 0;
+
+function handleOrientation(event) {
+    let gamma = event.gamma; // Telefonu Sol/Sağ eğme (-90 ile 90 arası)
+    let beta = event.beta;   // Telefonu İleri/Geri eğme (-180 ile 180 arası)
+    
+    if (gamma > 45) gamma = 45; if (gamma < -45) gamma = -45;
+    if (beta > 85) beta = 85; if (beta < 5) beta = 5; // Elde tutma açısı (yaklaşık 45 derece)
+    
+    // Telefon eğildikçe kamerayı TERS yönde kaydırarak "Akvaryum Camı" hissi yarat
+    targetCameraX = gamma * 0.3;
+    targetCameraY = (beta - 45) * 0.3; 
 }
 
-// --- YAŞAM FORMLARI ---
+// Bilgisayardan bakanlar için fareyle test etme
+window.addEventListener('mousemove', (e) => {
+    targetCameraX = (e.clientX / window.innerWidth - 0.5) * 20;
+    targetCameraY = -(e.clientY / window.innerHeight - 0.5) * 20;
+});
 
-class Fish {
-    constructor(x, y, size, speciesCode) {
-        this.x = x; this.y = y; this.size = size;
-        
-        // Rastgele bir tür geni seç (eğer aileden miras kalmamışsa)
-        this.species = speciesCode || SPECIES[Math.floor(Math.random() * SPECIES.length)];
-        this.isAdult = false;
-        
-        this.angle = Math.random() * Math.PI * 2;
-        this.speed = Math.random() * 1.2 + 0.8;
-        this.targetFood = null;
-        this.tailWag = 0; // Kuyruk sallama animasyonu için
+// 7. SİSTEMİ BAŞLATMA (Sensör izni)
+document.getElementById('start-btn').addEventListener('click', async () => {
+    // iOS/Android jiroskop izinleri
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+            const permission = await DeviceOrientationEvent.requestPermission();
+            if (permission === 'granted') window.addEventListener('deviceorientation', handleOrientation);
+        } catch (error) { console.error(error); }
+    } else {
+        window.addEventListener('deviceorientation', handleOrientation);
     }
+    
+    document.getElementById('start-screen').style.opacity = '0';
+    setTimeout(() => document.getElementById('start-screen').remove(), 500);
+});
 
-    update() {
-        this.tailWag += 0.2; // Kuyruk sallama hızı
-        
-        // Büyüme ve Evrim kontrolü
-        if (this.size >= ADULT_SIZE) this.isAdult = true;
+// 8. ANA ANİMASYON (Her saniye 60 kare çalışır)
+const clock = new THREE.Clock();
 
-        // Yem Arama Mantığı
-        if (foods.length > 0 && (!this.targetFood || !foods.includes(this.targetFood))) {
-            let closestDist = Infinity, closestFood = null;
-            for (let food of foods) {
-                let d = Math.hypot(this.x - food.x, this.y - food.y);
-                if (d < closestDist) { closestDist = d; closestFood = food; }
-            }
-            this.targetFood = closestFood;
-        } else if (foods.length === 0) this.targetFood = null;
-
-        // Yönelme ve Yeme
-        if (this.targetFood) {
-            let desiredAngle = Math.atan2(this.targetFood.y - this.y, this.targetFood.x - this.x);
-            let diff = desiredAngle - this.angle;
-            diff = Math.atan2(Math.sin(diff), Math.cos(diff)); 
-            this.angle += diff * 0.06;
-            
-            if (Math.hypot(this.x - this.targetFood.x, this.y - this.targetFood.y) < this.size + 5) {
-                foods.splice(foods.indexOf(this.targetFood), 1);
-                this.targetFood = null;
-                this.size += 2; // Yedikçe Büyür!
-            }
-        } else {
-            this.angle += (Math.random() - 0.5) * 0.05; // Sakin yüzüş
-        }
-
-        this.x += Math.cos(this.angle) * this.speed;
-        this.y += Math.sin(this.angle) * this.speed;
-
-        // Ekran Sınırları (Yumuşak dönüş)
-        if (this.x < 100 || this.x > canvas.width - 100 || this.y < 100 || this.y > canvas.height - 100) {
-            let centerAngle = Math.atan2((canvas.height/2) - this.y, (canvas.width/2) - this.x);
-            let diff = centerAngle - this.angle;
-            diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-            this.angle += diff * 0.02; 
-        }
-
-        // YUMURTLAMA (Sadece yetişkin ve tok olanlar)
-        if (this.size >= MAX_SIZE) {
-            if (this.y > canvas.height - 60) { // Dibe yakınsa
-                eggs.push(new Egg(this.x, canvas.height - 40, this.species)); // Gen aktarımı!
-                this.size = ADULT_SIZE - 2; // Enerji harcadı, biraz küçüldü
-            } else {
-                 let bottomAngle = Math.atan2(canvas.height - this.y, 0);
-                 let diff = bottomAngle - this.angle;
-                 this.angle += Math.atan2(Math.sin(diff), Math.cos(diff)) * 0.05;
-            }
-        }
-    }
-
-    draw() {
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle);
-        
-        let tailSwing = Math.sin(this.tailWag) * (this.size * 0.3); // Canlı kuyruk hareketi
-
-        if (!this.isAdult) {
-            // 1. BEBEK FORMU (Yarı şeffaf, soluk renkli ortak larva görünümü)
-            ctx.fillStyle = 'rgba(200, 220, 220, 0.7)';
-            ctx.beginPath(); ctx.ellipse(0, 0, this.size, this.size / 2.5, 0, 0, Math.PI * 2); ctx.fill();
-            // Basit bebek kuyruğu
-            ctx.beginPath(); ctx.moveTo(-this.size, 0); ctx.lineTo(-this.size*1.8, tailSwing - this.size/2); ctx.lineTo(-this.size*1.8, tailSwing + this.size/2); ctx.fill();
-            // Göz
-            ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(this.size/2, -this.size/6, 1, 0, Math.PI*2); ctx.fill();
-        } 
-        else {
-            // 2. YETİŞKİN FORM (Türe göre DNA çözülür)
-            if (this.species === 'clownfish') {
-                // PALYAÇO BALIĞI (Turuncu/Beyaz Çizgili)
-                ctx.fillStyle = '#ff6600';
-                ctx.beginPath(); ctx.ellipse(0, 0, this.size, this.size / 2, 0, 0, Math.PI * 2); ctx.fill();
-                // Beyaz şeritler
-                ctx.strokeStyle = 'white'; ctx.lineWidth = this.size / 3;
-                ctx.beginPath(); ctx.moveTo(this.size/3, -this.size/2); ctx.lineTo(this.size/3, this.size/2); ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(-this.size/3, -this.size/2); ctx.lineTo(-this.size/3, this.size/2); ctx.stroke();
-                // Kuyruk
-                ctx.fillStyle = '#ff6600'; ctx.beginPath(); ctx.moveTo(-this.size, 0); ctx.lineTo(-this.size*1.8, tailSwing - this.size/1.5); ctx.lineTo(-this.size*1.8, tailSwing + this.size/1.5); ctx.fill();
-            } 
-            else if (this.species === 'angelfish') {
-                // MELEK BALIĞI (Görkemli üçgen gövde, uzun yüzgeçler)
-                ctx.fillStyle = '#dddddd';
-                ctx.beginPath(); ctx.moveTo(this.size, 0); ctx.lineTo(-this.size, -this.size*1.5); ctx.lineTo(-this.size, this.size*1.5); ctx.fill();
-                // Siyah zarif çizgiler
-                ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
-                ctx.beginPath(); ctx.moveTo(0, -this.size*0.7); ctx.lineTo(0, this.size*0.7); ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(-this.size/2, -this.size); ctx.lineTo(-this.size/2, this.size); ctx.stroke();
-                // Kuyruk
-                ctx.beginPath(); ctx.moveTo(-this.size, 0); ctx.lineTo(-this.size*1.5, tailSwing - this.size/1.5); ctx.lineTo(-this.size*1.5, tailSwing + this.size/1.5); ctx.fill();
-            } 
-            else if (this.species === 'neon') {
-                // NEON TETRA (İnce, parlak mavi ve kırmızı)
-                ctx.fillStyle = '#00ffff'; // Üst kısım Neon mavi
-                ctx.beginPath(); ctx.ellipse(0, 0, this.size * 1.2, this.size / 3, 0, 0, Math.PI * 2); ctx.fill();
-                ctx.strokeStyle = '#ff0044'; // Alt kırmızı çizgi
-                ctx.lineWidth = this.size / 3;
-                ctx.beginPath(); ctx.moveTo(-this.size, 0); ctx.lineTo(this.size, 0); ctx.stroke();
-                // Saydam Kuyruk
-                ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.moveTo(-this.size*1.2, 0); ctx.lineTo(-this.size*2, tailSwing - this.size/2); ctx.lineTo(-this.size*2, tailSwing + this.size/2); ctx.fill();
-            }
-            
-            // Yetişkin Gözü
-            ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(this.size/1.5, -this.size/4, this.size/5, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(this.size/1.5 + 1, -this.size/4, this.size/10, 0, Math.PI*2); ctx.fill();
-        }
-        ctx.restore();
-    }
-}
-
-// YUMURTA SINIFI
-class Egg {
-    constructor(x, y, parentSpecies) {
-        this.x = x; this.y = y; this.size = 2;
-        this.species = parentSpecies; // Genetiği anneden alır!
-        this.timer = 0; 
-        this.timeToHatch = Math.random() * 200 + 200; 
-    }
-    update() {
-        this.timer++;
-        if (this.timer > this.timeToHatch) {
-             fishes.push(new Fish(this.x, this.y - 10, 4, this.species));
-             this.hatched = true; 
-        }
-    }
-    draw() {
-        // Yumurtalar türe göre hafif renkli olabilir ama şimdilik doğal altın sarısı yapalım
-        ctx.fillStyle = '#ffb84d'; 
-        ctx.beginPath(); ctx.arc(this.x, this.y, this.size + Math.sin(time*0.5)*0.5, 0, Math.PI * 2); ctx.fill(); // Kalp atışı gibi titrer
-    }
-}
-
-// SİSTEMİ BAŞLAT
-function init() {
-    fishes = []; foods = []; eggs = []; bubbles = [];
-    for(let i=0; i<8; i++) fishes.push(new Fish(Math.random() * canvas.width, Math.random() * canvas.height, 4, null)); // Başlangıç bebekleri
-}
-
-// ANA DÖNGÜ
 function animate() {
-    time += 1; 
     requestAnimationFrame(animate);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const elapsedTime = clock.getElapsedTime();
 
-    drawEnvironment(); // Deniz tabanı, yosunlar ve baloncuklar
+    // Planktonların hafifçe yükselmesi ve dönmesi
+    particlesMesh.position.y = Math.sin(elapsedTime * 0.2) * 5;
+    particlesMesh.rotation.y = elapsedTime * 0.03;
 
-    // Yemler
-    for (let i = foods.length - 1; i >= 0; i--) {
-        let f = foods[i]; f.y += f.speedY;
-        ctx.fillStyle = '#ffccaa'; ctx.beginPath(); ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2); ctx.fill();
-        if (f.y > canvas.height - 20) foods.splice(i, 1); // Kuma değince kaybolur
-    }
+    // Kameranın telefona/fareye göre yumuşakça kayması (Parallax Akıcılığı)
+    camera.position.x += (targetCameraX - camera.position.x) * 0.05;
+    camera.position.y += (targetCameraY - camera.position.y) * 0.05;
+    camera.lookAt(0, 0, 0); // Kamera her zaman ekranın merkezine (su altına) baksın
 
-    // Yumurtalar
-    for (let i = eggs.length - 1; i >= 0; i--) {
-        eggs[i].update();
-        if (eggs[i].hatched) eggs.splice(i, 1); else eggs[i].draw();
-    }
+    // Yem batırma fiziği
+    if (food) food.position.y -= 0.06;
 
-    // Balıklar
-    for (let f of fishes) { f.update(); f.draw(); }
+    // Balıkların 3 Boyutlu Yapay Zekası
+    fishes.forEach(fish => {
+        const data = fish.userData;
+        let target = new THREE.Vector3();
+        
+        // Eğer yem varsa hedef orası, yoksa merkez etrafında takıl
+        if (food) {
+            target.copy(food.position);
+        } else {
+            target.set(0, 0, 0); 
+        }
+
+        const direction = new THREE.Vector3().subVectors(target, fish.position);
+        const distance = direction.length();
+        
+        // Yemi yeme anı
+        if (food && distance < 2) {
+            scene.remove(food);
+            food = null; 
+            fish.scale.multiplyScalar(1.15); // Büyüme efekti
+        }
+
+        direction.normalize();
+        
+        // Yem yokken doğal ve organik bir şekilde sapmalarla yüz (Robot gibi düz gitmemesi için)
+        if (!food) {
+            direction.add(new THREE.Vector3(
+                Math.sin(elapsedTime * 0.8 + data.seed),
+                Math.cos(elapsedTime * 0.5 + data.seed),
+                Math.sin(elapsedTime * 1.2 + data.seed)
+            ).multiplyScalar(0.7));
+        }
+
+        // Fiziksel İvme (Lerp)
+        data.velocity.lerp(direction, 0.02);
+        data.velocity.normalize().multiplyScalar(data.speed);
+        fish.position.add(data.velocity);
+
+        // Balığın kafasını gittiği yöne 3 boyutlu olarak çevirmesi
+        const lookTarget = fish.position.clone().add(data.velocity);
+        fish.lookAt(lookTarget);
+
+        // Kuyruk animasyonu: Yem görünce heyecanlanıp hızlanırlar
+        const tailSpeed = food ? 18 : 6; 
+        data.tailMesh.rotation.y = Math.sin(elapsedTime * tailSpeed + data.seed) * 0.6;
+        
+        // Dünyanın sınırına çarparlarsa merkeze döndür
+        if (fish.position.length() > 50) {
+            fish.position.normalize().multiplyScalar(49);
+        }
+    });
+
+    renderer.render(scene, camera);
 }
 
-window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+// Ekran yan çevrildiğinde (Responsive) kamerayı güncelle
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
 
-init();
 animate();
