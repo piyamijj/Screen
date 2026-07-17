@@ -1,13 +1,38 @@
-body, html {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    /* Su yüzeyinden (açık mavi) derinlere (koyu lacivert) inen deniz */
-    background: radial-gradient(circle at 50% 0%, #005c99, #001122 80%);
+body, html { 
+    margin: 0; 
+    padding: 0; 
+    width: 100%; 
+    height: 100%; 
+    overflow: hidden; 
+    background-color: #000; 
+    font-family: sans-serif; 
 }
 
-canvas {
-    display: block;
+/* Başlangıç Ekranı Tasarımı */
+#start-screen { 
+    position: absolute; 
+    z-index: 10; 
+    width: 100%; 
+    height: 100%; 
+    /* Su altı karanlık mavisi */
+    background: radial-gradient(circle, #003366, #001122); 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center; 
+    color: white; 
+    transition: opacity 0.5s ease-out; 
+}
+
+button { 
+    padding: 15px 40px; 
+    font-size: 18px; 
+    cursor: pointer; 
+    background: #00ffcc; 
+    border: none; 
+    border-radius: 30px; 
+    color: #001122; 
+    font-weight: bold; 
+    margin-top: 20px;
+    box-shadow: 0 0 20px rgba(0, 255, 204, 0.5);
 }
