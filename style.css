@@ -4,8 +4,8 @@ body, html {
     width: 100%;
     height: 100%;
     overflow: hidden;
-    /* Derin bir okyanus mavisi gradyanı */
-    background: linear-gradient(to bottom, #002244, #001122); 
+    /* Su yüzeyinden (açık mavi) derinlere (koyu lacivert) inen deniz */
+    background: radial-gradient(circle at 50% 0%, #005c99, #001122 80%);
 }
 
 canvas {
