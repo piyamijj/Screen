@@ -14,6 +14,6 @@ Ekran paylaşımı sistem tarafından durdurulursa yeniden başlatmak ve onay ve
 
 ## Derleme
 
-JDK 17, Android SDK platform 34 ve build-tools 34.0.0 ile `ANDROID_HOME` veya `ANDROID_SDK_ROOT` ayarlayın. `./gradlew assembleRelease` küçültülmüş ve varsayılan debug anahtarıyla imzalanmış APK üretir. Kendi anahtarınızı kullanmak için `KEYSTORE_PATH` değişkenini ayarlayın (takma ad `key`, parola `android`). Alternatif olarak aynı anahtarla `KEYSTORE_PATH=/anahtar/yolu ./build.sh` çalıştırılabilir. `build.sh`, JDK ve Android SDK araçlarını kullanır, küçültme yapmaz.
+JDK 17, Android SDK platform 34 ve build-tools 34.0.0 ile `ANDROID_HOME` veya `ANDROID_SDK_ROOT` ayarlayın. `KEYSTORE_PATH=/anahtar/yolu ./gradlew signCompatRelease` küçültülmüş, eski imza uyumluluğuna göre imzalanmış `Screen.apk` üretir (takma ad `key`, parola `android`). Alternatif olarak aynı anahtarla `KEYSTORE_PATH=/anahtar/yolu ./build.sh` çalıştırılabilir; bu yöntem küçültme yapmaz. İki yöntem de imza için minimum API 16'yı kullanır; uygulamanın minimum Android sürümü 5.0 (API 21) olarak kalır. Uygulamayı güncellemek için önceki sürümle aynı imza anahtarı gereklidir.
 
 Telif © Piyami Polat

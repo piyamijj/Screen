@@ -26,7 +26,8 @@ find app/src/main/java "$out/generated" -name '*.java' > "$out/sources.txt"
     --lib "$android_jar" --output "$out/dex" $(find "$out/classes" -name '*.class')
 "$JAVA_HOME/bin/jar" uf "$out/unsigned.apk" -C "$out/dex" classes.dex
 run_native "$tools/zipalign" -f 4 "$out/unsigned.apk" "$out/aligned.apk"
-"$JAVA_HOME/bin/java" -jar "$tools/lib/apksigner.jar" sign --ks "$KEYSTORE_PATH" \
+"$JAVA_HOME/bin/java" -jar "$tools/lib/apksigner.jar" sign --min-sdk-version 16 --ks "$KEYSTORE_PATH" \
     --ks-key-alias key --ks-pass pass:android --key-pass pass:android \
-    --v1-signing-enabled true --v2-signing-enabled true --out Screen.apk "$out/aligned.apk"
-"$JAVA_HOME/bin/java" -jar "$tools/lib/apksigner.jar" verify --verbose Screen.apk
+    --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled false \
+    --v4-signing-enabled false --out Screen.apk "$out/aligned.apk"
+"$JAVA_HOME/bin/java" -jar "$tools/lib/apksigner.jar" verify --verbose --min-sdk-version 16 Screen.apk

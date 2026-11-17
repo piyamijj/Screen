@@ -7,8 +7,8 @@ android {
         applicationId 'com.piyami.screen'
         minSdk 21
         targetSdk 33
-        versionCode 3
-        versionName '1.2'
+        versionCode 4
+        versionName '1.2.1'
     }
     signingConfigs {
         releaseKey {
@@ -31,4 +31,20 @@ android {
         }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
+}
+
+tasks.register('signCompatRelease', Exec) {
+    dependsOn 'assembleRelease'
+    doFirst {
+        def keystore = System.getenv('KEYSTORE_PATH')
+        if (!keystore) throw new GradleException('Set KEYSTORE_PATH to the signing keystore')
+        def signer = new File(android.sdkDirectory, 'build-tools/34.0.0/lib/apksigner.jar')
+        def inputApk = layout.buildDirectory.file('outputs/apk/release/app-release.apk').get().asFile
+        commandLine new File(System.getProperty('java.home'), 'bin/java'), '-jar', signer,
+                'sign', '--min-sdk-version', '16', '--ks', keystore,
+                '--ks-key-alias', 'key', '--ks-pass', 'pass:android', '--key-pass', 'pass:android',
+                '--v1-signing-enabled', 'true', '--v2-signing-enabled', 'true',
+                '--v3-signing-enabled', 'false', '--v4-signing-enabled', 'false',
+                '--out', rootProject.file('Screen.apk'), inputApk
+    }
 }
