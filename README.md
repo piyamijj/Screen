@@ -6,9 +6,11 @@ Ekranın üzerinde sürüklenebilir bir düğme gösterir; düğmeye dokununca e
 
 `Screen.apk` dosyasını telefona aktarın ve açın. Gerekirse cihaz ayarlarından bu kaynak için bilinmeyen kaynaklardan uygulama yüklemeye izin verin.
 
-Uygulamada **Başlat** düğmesine dokunun. İstenirse depolama izni verin (Android 6–9), diğer uygulamaların üzerinde gösterme iznini açın ve Android'in ekran paylaşımı izin penceresini onaylayın. Android 13 ve sonrasında bildirim izni isteğe bağlıdır; izin verilmezse bildirimdeki durdurma eylemi görünmeyebilir. Uygulama arka plana geçer; ekrandaki yuvarlak düğmeyi sürükleyebilir ve görüntü almak için ona dokunabilirsiniz. Düğme çekim sırasında kısa süreliğine gizlenir. Uygulamayı tekrar açıp **Durdur**'a veya servisin bildirimindeki **Durdur** eylemine basarak düğmeyi ve ekran paylaşımını kapatabilirsiniz.
+Uygulamada **Başlat** düğmesine bir kez dokunun. İstenirse depolama izni verin (Android 6–9); düğmenin görünmesi için izin sorusunda **Evet**'e dokunup diğer uygulamaların üzerinde gösterme iznini açın ve uygulamaya dönün. Ardından Android'in ekran paylaşımı penceresinde **Şimdi başlat**'ı onaylayın. Bu sistem onayı servis her başlatıldığında bir kez zorunludur ve kaldırılamaz. Başlatmak görüntü kaydetmez.
 
-Android 14 ve sonrasında sistem, sonraki çekimler için ekran paylaşımı onayını yeniden isteyebilir. Bazı uygulamaların korumalı içerikleri ekran görüntüsünde görünmeyebilir.
+Uygulama arka plana geçer; ekrandaki yuvarlak düğmeyi sürükleyebilir ve istediğiniz kadar görüntü almak için ona dokunabilirsiniz. Düğme çekim sırasında kısa süreliğine gizlenir. Uygulamayı tekrar açıp **Durdur**'a veya servisin bildirimindeki **Durdur** eylemine basarak düğmeyi ve ekran paylaşımını kapatabilirsiniz. Android 13 ve sonrasında bildirim izni isteğe bağlıdır; izin verilmezse bildirimdeki durdurma eylemi görünmeyebilir.
+
+Ekran paylaşımı sistem tarafından durdurulursa yeniden başlatmak ve onay vermek gerekir. Ekran paylaşımı penceresinde tüm ekranı seçin. Bazı uygulamaların korumalı içerikleri ekran görüntüsünde görünmeyebilir.
 
 ## Derleme
 

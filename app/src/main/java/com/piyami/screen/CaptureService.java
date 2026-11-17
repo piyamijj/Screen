@@ -10,6 +10,7 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
@@ -39,6 +40,7 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -54,7 +56,22 @@ public class CaptureService extends Service {
     private TextView overlay;
     private VirtualDisplay display;
     private ImageReader reader;
+    private Image latestFrame;
+    private int captureWidth;
+    private int captureHeight;
+    private int captureDensity;
+    private long frameSequence;
+    private long lastFrameTimestamp;
+    private long sequenceAtHide;
+    private long timestampAtHide;
+    private long hideTimeNanos;
     private boolean capturing;
+    private boolean captureReady;
+    private final Runnable captureDelay = () -> {
+        if (!capturing) return;
+        captureReady = true;
+        consumeLatestFrame();
+    };
     private final Runnable captureTimeout = () -> {
         if (capturing) {
             finishCapture();
@@ -81,8 +98,14 @@ public class CaptureService extends Service {
             if (projection == null) throw new IllegalStateException("Ekran izni alınamadı");
             projection.registerCallback(new MediaProjection.Callback() {
                 @Override public void onStop() { stopSelf(); }
+                @Override public void onCapturedContentResize(int width, int height) {
+                    if (Build.VERSION.SDK_INT >= 34 && display != null && width > 0 && height > 0) {
+                        resizeDisplay(width, height, captureDensity);
+                    }
+                }
             }, handler);
             addOverlay();
+            createDisplay();
             running = true;
             showToast("Ekran düğmesi hazır");
         } catch (Exception error) {
@@ -178,76 +201,153 @@ public class CaptureService extends Service {
         windowManager.addView(overlay, params);
     }
 
-    private void requestCapture() {
-        if (capturing || projection == null || overlay == null) return;
-        capturing = true;
-        overlay.setVisibility(View.INVISIBLE);
-        handler.postDelayed(this::captureFrame, 250);
-        handler.postDelayed(captureTimeout, 60000);
+    private ImageReader newReader(int width, int height) {
+        ImageReader result = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3);
+        result.setOnImageAvailableListener(this::readFrame, handler);
+        return result;
     }
 
-    private void captureFrame() {
-        if (!capturing || projection == null) return;
-        try {
+    private void createDisplay() {
+        DisplayMetrics metrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        captureWidth = metrics.widthPixels;
+        captureHeight = metrics.heightPixels;
+        captureDensity = metrics.densityDpi;
+        reader = newReader(captureWidth, captureHeight);
+        display = projection.createVirtualDisplay("Screen", captureWidth, captureHeight, captureDensity,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.getSurface(), null, handler);
+        if (display == null) throw new IllegalStateException("Ekran oluşturulamadı");
+    }
+
+    @Override public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        handler.postDelayed(() -> {
+            if (display == null || windowManager == null) return;
             DisplayMetrics metrics = new DisplayMetrics();
             windowManager.getDefaultDisplay().getRealMetrics(metrics);
-            int width = metrics.widthPixels;
-            int height = metrics.heightPixels;
-            reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
-            reader.setOnImageAvailableListener(source -> readFrame(source, width, height), handler);
-            display = projection.createVirtualDisplay("Screen", width, height, metrics.densityDpi,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.getSurface(), null, handler);
-            if (display == null) throw new IllegalStateException("Ekran oluşturulamadı");
+            resizeDisplay(metrics.widthPixels, metrics.heightPixels, metrics.densityDpi);
+        }, 100);
+    }
+
+    private void resizeDisplay(int width, int height, int density) {
+        if (display == null || width <= 0 || height <= 0 || density <= 0) return;
+        if (width == captureWidth && height == captureHeight && density == captureDensity) return;
+        ImageReader replacement = null;
+        try {
+            replacement = newReader(width, height);
+            display.resize(width, height, density);
+            display.setSurface(replacement.getSurface());
+            ImageReader previous = reader;
+            reader = replacement;
+            replacement = null;
+            captureWidth = width;
+            captureHeight = height;
+            captureDensity = density;
+            closeLatestFrame();
+            sequenceAtHide = frameSequence;
+            lastFrameTimestamp = 0;
+            timestampAtHide = 0;
+            if (previous != null) previous.close();
         } catch (Exception error) {
-            finishCapture();
-            showToast("Ekran görüntüsü alınamadı: " + error.getMessage());
+            if (replacement != null) replacement.close();
+            showToast("Ekran boyutu değiştirilemedi: " + error.getMessage());
+            stopSelf();
         }
     }
 
-    private void readFrame(ImageReader source, int width, int height) {
-        if (!capturing) return;
+    private void requestCapture() {
+        if (capturing || projection == null || overlay == null || reader == null) return;
+        readFrame(reader);
+        closeLatestFrame();
+        overlay.setVisibility(View.INVISIBLE);
+        hideTimeNanos = System.nanoTime();
+        sequenceAtHide = frameSequence;
+        timestampAtHide = lastFrameTimestamp;
+        capturing = true;
+        captureReady = false;
+        handler.postDelayed(captureDelay, 300);
+        handler.postDelayed(captureTimeout, 1500);
+    }
+
+    private void readFrame(ImageReader source) {
+        if (source != reader) return;
         Image image = null;
-        Bitmap result = null;
-        boolean failed = false;
         try {
             image = source.acquireLatestImage();
             if (image == null) return;
-            if (overlay != null) overlay.setVisibility(View.VISIBLE);
-            Image.Plane plane = image.getPlanes()[0];
-            if (plane.getPixelStride() != 4) throw new IllegalStateException("Desteklenmeyen piksel biçimi");
-            int paddedWidth = width + (plane.getRowStride() - plane.getPixelStride() * width) / plane.getPixelStride();
-            Bitmap padded = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888);
-            try {
-                padded.copyPixelsFromBuffer(plane.getBuffer());
-                result = Bitmap.createBitmap(padded, 0, 0, width, height);
-            } finally {
-                if (result != padded) padded.recycle();
+            frameSequence++;
+            long timestamp = image.getTimestamp();
+            lastFrameTimestamp = timestamp;
+            boolean newer = frameSequence > sequenceAtHide &&
+                    (timestamp <= 0 || timestampAtHide <= 0 || timestamp > timestampAtHide);
+            long now = System.nanoTime();
+            boolean sameClock = timestamp > 0 && Math.abs(now - timestamp) < 10000000000L;
+            if (capturing && newer && (!sameClock || timestamp >= hideTimeNanos)) {
+                closeLatestFrame();
+                latestFrame = image;
+                image = null;
+                if (captureReady) consumeLatestFrame();
             }
         } catch (Exception error) {
-            failed = true;
+            if (capturing) {
+                finishCapture();
+                showToast("Ekran görüntüsü alınamadı: " + error.getMessage());
+            }
+        } finally { if (image != null) image.close(); }
+    }
+
+    private void consumeLatestFrame() {
+        if (!capturing || !captureReady || latestFrame == null) return;
+        Image image = latestFrame;
+        latestFrame = null;
+        finishCapture();
+        try {
+            int width = image.getWidth();
+            int height = image.getHeight();
+            Image.Plane plane = image.getPlanes()[0];
+            int stride = plane.getRowStride();
+            if (plane.getPixelStride() != 4 || stride % 4 != 0 || stride < width * 4 ||
+                    (long) stride * height > Integer.MAX_VALUE) throw new IllegalStateException("Desteklenmeyen piksel biçimi");
+            byte[] pixels = new byte[stride * height];
+            ByteBuffer buffer = plane.getBuffer();
+            if (buffer.remaining() < (long) (height - 1) * stride + width * 4L) {
+                throw new IllegalStateException("Eksik görüntü verisi");
+            }
+            buffer.get(pixels, 0, Math.min(buffer.remaining(), pixels.length));
+            saver.execute(() -> saveFrame(pixels, width, height, stride));
+        } catch (Exception | OutOfMemoryError error) {
             showToast("Ekran görüntüsü alınamadı: " + error.getMessage());
+        } finally { image.close(); }
+    }
+
+    private void saveFrame(byte[] pixels, int width, int height, int stride) {
+        Bitmap padded = null;
+        Bitmap bitmap = null;
+        try {
+            padded = Bitmap.createBitmap(stride / 4, height, Bitmap.Config.ARGB_8888);
+            padded.copyPixelsFromBuffer(ByteBuffer.wrap(pixels));
+            bitmap = Bitmap.createBitmap(padded, 0, 0, width, height);
+            saveBitmap(getApplicationContext(), bitmap);
+            showToast("Ekran görüntüsü kaydedildi");
+        } catch (Exception | OutOfMemoryError error) {
+            showToast("Kaydedilemedi: " + error.getMessage());
         } finally {
-            if (image != null) image.close();
-            if (image != null || failed) finishCapture();
-        }
-        if (result != null) {
-            Bitmap bitmap = result;
-            saver.execute(() -> {
-                try {
-                    saveBitmap(getApplicationContext(), bitmap);
-                    showToast("Ekran görüntüsü kaydedildi");
-                } catch (Exception error) { showToast("Kaydedilemedi: " + error.getMessage()); }
-                finally { bitmap.recycle(); }
-            });
+            if (bitmap != null && bitmap != padded) bitmap.recycle();
+            if (padded != null) padded.recycle();
         }
     }
 
+    private void closeLatestFrame() {
+        if (latestFrame != null) { latestFrame.close(); latestFrame = null; }
+    }
+
     private void finishCapture() {
+        handler.removeCallbacks(captureDelay);
         handler.removeCallbacks(captureTimeout);
         capturing = false;
+        captureReady = false;
+        closeLatestFrame();
         if (overlay != null) overlay.setVisibility(View.VISIBLE);
-        if (display != null) { display.release(); display = null; }
-        if (reader != null) { reader.close(); reader = null; }
     }
 
     private void saveBitmap(Context context, Bitmap bitmap) throws Exception {
@@ -290,6 +390,8 @@ public class CaptureService extends Service {
         running = false;
         handler.removeCallbacksAndMessages(null);
         finishCapture();
+        if (display != null) { display.release(); display = null; }
+        if (reader != null) { reader.close(); reader = null; }
         if (overlay != null && windowManager != null) {
             try { windowManager.removeView(overlay); } catch (IllegalArgumentException ignored) { }
             overlay = null;

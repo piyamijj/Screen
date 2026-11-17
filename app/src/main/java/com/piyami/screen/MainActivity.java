@@ -2,6 +2,7 @@ package com.piyami.screen;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.projection.MediaProjectionManager;
@@ -23,6 +24,7 @@ public class MainActivity extends Activity {
     private static final int NOTIFICATION_PERMISSION = 4;
     private TextView status;
     private Button startButton;
+    private boolean pendingOverlayReturn;
     private final Handler handler = new Handler();
     private final Runnable statusUpdate = new Runnable() {
         @Override public void run() {
@@ -39,6 +41,18 @@ public class MainActivity extends Activity {
         int padding = (int) (24 * getResources().getDisplayMetrics().density);
         layout.setPadding(padding, padding, padding, padding);
 
+        TextView instructions = new TextView(this);
+        instructions.setGravity(Gravity.CENTER);
+        instructions.setTextSize(20);
+        instructions.setText("Başlat'a bir kez bas, \"Şimdi başlat\"ı onayla, sonra düğmeyle istediğin kadar ekran görüntüsü al.");
+        layout.addView(instructions, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView systemNotice = new TextView(this);
+        systemNotice.setGravity(Gravity.CENTER);
+        systemNotice.setTextSize(16);
+        systemNotice.setText("Sistem onayı, servis her başlatıldığında bir kez görünür; Android gereği kaldırılamaz.");
+        layout.addView(systemNotice, new LinearLayout.LayoutParams(-1, -2));
+
         status = new TextView(this);
         status.setGravity(Gravity.CENTER);
         status.setTextSize(18);
@@ -54,6 +68,7 @@ public class MainActivity extends Activity {
         stopButton.setText("Durdur");
         stopButton.setAllCaps(false);
         stopButton.setOnClickListener(view -> {
+            pendingOverlayReturn = false;
             stopService(new Intent(this, CaptureService.class));
             status.setText("Ekran düğmesi durduruldu");
             startButton.setEnabled(true);
@@ -65,11 +80,13 @@ public class MainActivity extends Activity {
         footer.setGravity(Gravity.CENTER);
         layout.addView(footer, new LinearLayout.LayoutParams(-1, -2));
         setContentView(layout);
+        if (state != null) pendingOverlayReturn = state.getBoolean("pending_overlay_return", false);
     }
 
     @Override protected void onResume() {
         super.onResume();
         statusUpdate.run();
+        if (pendingOverlayReturn) finishOverlayReturn();
     }
 
     @Override protected void onPause() {
@@ -91,11 +108,12 @@ public class MainActivity extends Activity {
             return;
         }
         if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "Lütfen diğer uygulamaların üzerinde gösterme izni verin", Toast.LENGTH_LONG).show();
-            try {
-                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
-                startActivityForResult(intent, OVERLAY_PERMISSION);
-            } catch (Exception error) { showError("Üstte gösterme ayarı açılamadı"); }
+            new AlertDialog.Builder(this)
+                    .setMessage("Düğmenin ekranda görünmesi için izin gerekli. Devam?")
+                    .setPositiveButton("Evet", (dialog, which) -> openOverlaySettings())
+                    .setNegativeButton("Hayır", (dialog, which) -> showError("Düğmeyi göstermek için bu izin gerekli"))
+                    .setOnCancelListener(dialog -> showError("Düğmeyi göstermek için bu izin gerekli"))
+                    .show();
             return;
         }
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -108,6 +126,30 @@ public class MainActivity extends Activity {
         MediaProjectionManager manager = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
         try { startActivityForResult(manager.createScreenCaptureIntent(), PROJECTION_PERMISSION); }
         catch (Exception error) { showError("Ekran izni açılamadı"); }
+    }
+
+    private void openOverlaySettings() {
+        if (Build.VERSION.SDK_INT < 23) { requestStart(); return; }
+        try {
+            pendingOverlayReturn = true;
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
+            startActivityForResult(intent, OVERLAY_PERMISSION);
+        } catch (Exception error) {
+            pendingOverlayReturn = false;
+            showError("Üstte gösterme ayarı açılamadı");
+        }
+    }
+
+    private void finishOverlayReturn() {
+        if (!pendingOverlayReturn) return;
+        pendingOverlayReturn = false;
+        if (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)) requestStart();
+        else showError("Üstte gösterme izni gerekli");
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        state.putBoolean("pending_overlay_return", pendingOverlayReturn);
+        super.onSaveInstanceState(state);
     }
 
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
@@ -123,8 +165,7 @@ public class MainActivity extends Activity {
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (request == OVERLAY_PERMISSION) {
-            if (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)) requestStart();
-            else showError("Üstte gösterme izni gerekli");
+            finishOverlayReturn();
         } else if (request == PROJECTION_PERMISSION) {
             if (result != RESULT_OK || data == null) { showError("Ekran görüntüsü izni verilmedi"); return; }
             Intent service = new Intent(this, CaptureService.class);
