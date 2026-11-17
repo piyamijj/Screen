@@ -14,6 +14,10 @@ Ekran paylaşımı sistem tarafından durdurulursa yeniden başlatmak ve onay ve
 
 ## Derleme
 
+Eski cihazlar için ayrı paket adlı `Screen-Eski.apk` (Android 5–8.1) denenebilir; normal Screen uygulamasını güncellemez ve onunla yan yana kurulabilir. Bu sürüm Android 9 ve üzerinde çalışmaz; bu cihazlarda normal `Screen.apk` kullanılmalıdır. Android 6–8.1'de izinler kapatılmışsa uygulama ayarlarından tekrar açılmalıdır.
+
 JDK 17, Android SDK platform 34 ve build-tools 34.0.0 ile `ANDROID_HOME` veya `ANDROID_SDK_ROOT` ayarlayın. `KEYSTORE_PATH=/anahtar/yolu ./gradlew signCompatRelease` küçültülmüş, eski imza uyumluluğuna göre imzalanmış `Screen.apk` üretir (takma ad `key`, parola `android`). Alternatif olarak aynı anahtarla `KEYSTORE_PATH=/anahtar/yolu ./build.sh` çalıştırılabilir; bu yöntem küçültme yapmaz. İki yöntem de imza için minimum API 16'yı kullanır; uygulamanın minimum Android sürümü 5.0 (API 21) olarak kalır. Uygulamayı güncellemek için önceki sürümle aynı imza anahtarı gereklidir.
+
+`KEYSTORE_PATH=/anahtar/yolu ./build-eski.sh` ayrı kaynak ve manifest kullanarak `Screen-Eski.apk` üretir; `Screen.apk` dosyasını değiştirmez.
 
 Telif © Piyami Polat
