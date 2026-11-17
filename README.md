@@ -1,10 +1,14 @@
 # Screen
 
-Tek düğmeyle ekran görüntüsü alır ve Pictures/Screenshots klasörüne PNG olarak kaydeder. Android 5.0 ve üzerini destekler. © Piyami Polat.
+Ekranın üzerinde sürüklenebilir bir düğme gösterir; düğmeye dokununca ekran görüntüsünü Pictures/Screenshots klasörüne PNG olarak kaydeder. Android 5.0 ve üzerini destekler. © Piyami Polat.
 
 ## Kurulum ve kullanım
 
-`Screen.apk` dosyasını telefona aktarın ve açın. Gerekirse cihaz ayarlarından bu kaynak için bilinmeyen kaynaklardan uygulama yüklemeye izin verin. Düğmeye basınca Android'in ekran görüntüsü alma izin penceresini onaylayın; eski Android sürümlerinde depolama izni de gereklidir. Uygulama çekimden önce arka plana geçer.
+`Screen.apk` dosyasını telefona aktarın ve açın. Gerekirse cihaz ayarlarından bu kaynak için bilinmeyen kaynaklardan uygulama yüklemeye izin verin.
+
+Uygulamada **Başlat** düğmesine dokunun. İstenirse depolama izni verin (Android 6–9), diğer uygulamaların üzerinde gösterme iznini açın ve Android'in ekran paylaşımı izin penceresini onaylayın. Android 13 ve sonrasında bildirim izni isteğe bağlıdır; izin verilmezse bildirimdeki durdurma eylemi görünmeyebilir. Uygulama arka plana geçer; ekrandaki yuvarlak düğmeyi sürükleyebilir ve görüntü almak için ona dokunabilirsiniz. Düğme çekim sırasında kısa süreliğine gizlenir. Uygulamayı tekrar açıp **Durdur**'a veya servisin bildirimindeki **Durdur** eylemine basarak düğmeyi ve ekran paylaşımını kapatabilirsiniz.
+
+Android 14 ve sonrasında sistem, sonraki çekimler için ekran paylaşımı onayını yeniden isteyebilir. Bazı uygulamaların korumalı içerikleri ekran görüntüsünde görünmeyebilir.
 
 ## Derleme
 
